@@ -57,6 +57,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include <float.h>
+#include <limits>
 
 #ifdef HAVE_TEGRA_OPTIMIZATION
 #include "opencv2/imgproc/imgproc_tegra.hpp"

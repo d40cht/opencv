@@ -50,6 +50,7 @@
 #include "opencv2/core/private.hpp"
 
 #include <list>
+#include <limits>
 
 #ifdef HAVE_TEGRA_OPTIMIZATION
 #include "opencv2/video/video_tegra.hpp"

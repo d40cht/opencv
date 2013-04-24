@@ -51,6 +51,8 @@
 #include "opencv2/core/private.hpp"
 #include "opencv2/core/gpu_private.hpp"
 
+#include <limits>
+
 #include <assert.h>
 #include <ctype.h>
 #include <float.h>

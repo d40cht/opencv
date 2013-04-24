@@ -73,6 +73,34 @@ object TestBuild extends NativeDefaultBuild
     }
     
     
+    def OpenCVModuleStaticLibrary( name : String, baseDir : File, settings : => Seq[sbt.Project.Setting[_]] ) =
+    {
+        StaticLibrary( name, baseDir,
+            Seq(
+                includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+                exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+                sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+                compileFlags                += "-D__OPENCV_BUILD=1"
+            ) ++ settings,
+            ignoreTestDir=true )
+    }
+    
+    def OpenCVTest( parentProject : NativeProject, subDir : String, testDependencies : Seq[NativeProject] ) =
+    {
+        var np = NativeTest( parentProject.p.id + "_" + subDir, parentProject.p.base / subDir,
+            Seq(
+                includeDirectories  <++= (projectDirectory) map { pd => Seq(pd) },
+                sourceFiles         <<= (projectDirectory) map { pd => (pd * "*.cpp").get },
+                compileFlags        += "-D__OPENCV_BUILD=1",
+                nativeLibraries     ++= Seq("pthread", "rt", "z")
+            ) )
+    
+        np = testDependencies.foldLeft(np) { case (np, extra) => np.nativeDependsOn(extra) }
+        np = np.nativeDependsOn( parentProject )
+        np = parentProject.dependencies.foldLeft(np) { case (np, extra) => np.nativeDependsOn(extra) }
+        np
+    }
+    
 /*
 3rdparty/libwebp
 3rdparty/openexr
@@ -106,8 +134,10 @@ object TestBuild extends NativeDefaultBuild
                 
                 
                 val autoHeaderRoot = pbd / "autoHeader"
-                
                 ch.transformFile( file("cmake/templates/cvconfig.h.cmake"), autoHeaderRoot / "cvconfig.h", autoHeaderRoot / "state.cache" )
+                
+                val versionStringInc = autoHeaderRoot / "version_string.inc"
+                if ( !versionStringInc.exists ) IO.write( versionStringInc, "\"Some blah\"" )
 
                 Seq(autoHeaderRoot)
             }
@@ -172,21 +202,134 @@ object TestBuild extends NativeDefaultBuild
             sourceFiles         <<= (projectDirectory) map { pd => (pd * "*.c").get }
         ) )
         
-    lazy val modulesCore = StaticLibrary( "modulesCore", file( "modules/core"),
+    lazy val modulesCore = OpenCVModuleStaticLibrary( "modulesCore", file( "modules/core" ), Seq() )
+        .nativeDependsOn( openCVConfig )
+
+    lazy val modulesImgproc = StaticLibrary( "modulesImgproc", file( "modules/imgproc" ),
         Seq(
             includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
             exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
             sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
             compileFlags                += "-D__OPENCV_BUILD=1"
-        ) )
-        .nativeDependsOn(openCVConfig)
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesCore )
         
-    lazy val modulesCoreTest = StaticLibrary( "modulesCoreTest", file( "modules/core/test"),
+    lazy val modulesFlann = StaticLibrary( "modulesFlann", file( "modules/flann" ),
         Seq(
-            includeDirectories  <++= (projectDirectory) map { pd => Seq(pd, pd / "../../ts/include") },
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesCore )
+        
+    lazy val modulesFeatures2d = StaticLibrary( "modulesFeatures2d", file( "modules/features2d" ),
+        Seq(
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesFlann, modulesImgproc, modulesCore )
+    
+    lazy val modulesCalib3d = StaticLibrary( "modulesCalib3d", file( "modules/calib3d" ),
+        Seq(
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesFlann, modulesFeatures2d, modulesImgproc, modulesCore )
+        
+    lazy val modulesMl = StaticLibrary( "modulesMl", file( "modules/ml" ),
+        Seq(
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesCore )
+        
+    lazy val modulesVideo = StaticLibrary( "modulesVideo", file( "modules/video" ),
+        Seq(
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesImgproc, modulesCore )
+    
+    
+    lazy val modulesHighgui = StaticLibrary( "modulesHighgui", file( "modules/highgui" ),
+        Seq(
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map
+            { pd =>
+                val rawFiles = ((pd / "src") * "*.cpp").get
+                
+                Seq( "src/bitstrm.cpp", "src/cap.cpp", "src/cap_images.cpp", "src/cap_ffmpeg.cpp", "src/loadsave.cpp", "src/precomp.cpp", "src/utils.cpp", "src/window.cpp" )
+                    .map( f => pd / f ) ++ ((pd / "src") * "grfmt*.cpp").get
+            },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesCore, modulesImgproc )
+    
+       
+    lazy val modulesTs = StaticLibrary( "modulesTs", file( "modules/ts" ), 
+        Seq(
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesCore, modulesImgproc, modulesHighgui )
+    
+    lazy val modulesCoreTest            = OpenCVTest( modulesCore, "test", Seq(modulesTs) )
+    lazy val modulesCorePerfTest        = OpenCVTest( modulesCore, "perf", Seq(modulesTs) )
+    lazy val modulesImgprocTest         = OpenCVTest( modulesImgproc, "test", Seq(modulesTs, modulesHighgui) )
+    lazy val modulesImgprocPerfTest     = OpenCVTest( modulesImgproc, "perf", Seq(modulesTs, modulesHighgui) )
+    lazy val modulesFlannTest           = OpenCVTest( modulesFlann, "test", Seq(modulesTs) )
+    //lazy val modulesFlannPerfTest       = OpenCVTest( modulesFlann, "perf", Seq(modulesTs) )
+    lazy val modulesFeatures2dTest      = OpenCVTest( modulesFeatures2d, "test", Seq(modulesTs, modulesHighgui) )
+    lazy val modulesFeatures2dPerfTest  = OpenCVTest( modulesFeatures2d, "perf", Seq(modulesTs, modulesHighgui) )
+    lazy val modulesCalib3dTest         = OpenCVTest( modulesCalib3d, "test", Seq(modulesTs, modulesHighgui) )
+    lazy val modulesCalib3dPerfTest     = OpenCVTest( modulesCalib3d, "perf", Seq(modulesTs, modulesHighgui) )
+    lazy val modulesMlTest              = OpenCVTest( modulesMl, "test", Seq(modulesTs) )
+    //lazy val modulesMlPerfTest          = OpenCVTest( modulesMl, "perf", Seq(modulesTs) )
+    lazy val modulesVideoTest           = OpenCVTest( modulesVideo, "test", Seq(modulesTs, modulesHighgui) )
+    lazy val modulesVideoPerfTest       = OpenCVTest( modulesVideo, "perf", Seq(modulesTs, modulesHighgui) )
+    //lazy val modulesHighgui
+    
+    /* lazy val modulesLegacy = StaticLibrary( "modulesLegacy", file( "modules/legacy" ),
+        Seq(
+            includeDirectories          <++= (projectDirectory) map { pd => Seq(pd / "src") },
+            exportedIncludeDirectories  <<= (projectDirectory) map { pd => Seq(pd / "include") },
+            sourceFiles                 <<= (projectDirectory) map { pd => ((pd / "src") * "*.cpp").get },
+            compileFlags                += "-D__OPENCV_BUILD=1"
+        ), ignoreTestDir=true )
+        .nativeDependsOn( openCVConfig, modulesCore, modulesFlann, modulesImgproc, modulesFeatures2d, modulesCalib3d, modulesMl, modulesVideo )
+
+    
+        
+    */
+        
+    /*lazy val modulesCoreTest = NativeTest( "modulesCoreTest", file( "modules/core/test"),
+        Seq(
+            includeDirectories  <++= (projectDirectory) map { pd => Seq(pd) },
             sourceFiles         <<= (projectDirectory) map { pd => (pd * "*.cpp").get },
-            compileFlags        += "-D__OPENCV_BUILD=1"
+            compileFlags        += "-D__OPENCV_BUILD=1",
+            nativeLibraries     ++= Seq("pthread", "rt", "z")
         ) )
-        .nativeDependsOn(openCVConfig, modulesCore)
+        .nativeDependsOn(openCVConfig, modulesCore, modulesTs)
+        
+    lazy val modulesCorePerfTest = NativeTest( "modulesCorePerfTest", file( "modules/core/perf"),
+        Seq(
+            includeDirectories  <++= (projectDirectory) map { pd => Seq(pd) },
+            sourceFiles         <<= (projectDirectory) map { pd => (pd * "*.cpp").get },
+            compileFlags        += "-D__OPENCV_BUILD=1",
+            nativeLibraries     ++= Seq("pthread", "rt", "z")
+        ) )
+        .nativeDependsOn(openCVConfig, modulesTs, modulesCore)*/
         
 }
