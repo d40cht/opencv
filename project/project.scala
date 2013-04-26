@@ -72,7 +72,6 @@ object TestBuild extends NativeDefaultBuild
         PlatformChecks.testCXXCompiler( log, env.compiler )
     }
     
-    
     def OpenCVModuleStaticLibrary( name : String, baseDir : File, settings : => Seq[sbt.Project.Setting[_]] ) =
     {
         StaticLibrary( name, baseDir,
@@ -89,10 +88,12 @@ object TestBuild extends NativeDefaultBuild
     {
         var np = NativeTest( parentProject.p.id + "_" + subDir, parentProject.p.base / subDir,
             Seq(
-                includeDirectories  <++= (projectDirectory) map { pd => Seq(pd) },
-                sourceFiles         <<= (projectDirectory) map { pd => (pd * "*.cpp").get },
-                compileFlags        += "-D__OPENCV_BUILD=1",
-                nativeLibraries     ++= Seq("pthread", "rt", "z")
+                includeDirectories          <++= (projectDirectory) map { pd => Seq(pd) },
+                sourceFiles                 <<= (projectDirectory) map { pd => (pd * "*.cpp").get },
+                compileFlags                += "-D__OPENCV_BUILD=1",
+                nativeLibraries             ++= Seq("pthread", "rt", "z"),
+                testEnvironmentVariables    ++= Seq(
+                    "OPENCV_TEST_DATA_PATH" -> "/home/alex.wilson/Devel/AW/opencv_extra/testdata" )
             ) )
     
         np = testDependencies.foldLeft(np) { case (np, extra) => np.nativeDependsOn(extra) }
