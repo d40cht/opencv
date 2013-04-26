@@ -1,4 +1,3 @@
-
 # OpenCV built under sbt-cpp
 
 Using [sbt](http://www.scala-sbt.org/) to build OpenCV.
@@ -8,9 +7,9 @@ Using [sbt](http://www.scala-sbt.org/) to build OpenCV.
 
 ## OpenCV: open source computer vision library
 
-Homepage:    http://opencv.org
-Online docs: http://docs.opencv.org
-Q&A forum:   http://answers.opencv.org
-Dev zone:    http://code.opencv.org
+* Homepage:    http://opencv.org
+* Online docs: http://docs.opencv.org
+* Q&A forum:   http://answers.opencv.org
+* Dev zone:    http://code.opencv.org
 
 
