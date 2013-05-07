@@ -5,29 +5,23 @@ import org.seacourt.build._
 import org.seacourt.build.NativeBuild._
 import org.seacourt.build.NativeDefaultBuild._
 
-
-
-class CMakeConfigHolder( val log : Logger, val compiler : Compiler )
+class CMakePlatformConfig( val log : Logger, val compiler : Compiler )
 {
     import PlatformChecks._
     
     private var macroMap = Map[String, Boolean]()
     
-    
-    def check_include_file( headerName : String, macroName : String )
+    class MacroRegistrationHelper( val state : Boolean )
     {
-        macroMap += (macroName -> testForHeader( log, compiler, CCTest, headerName ))
+        def registerDefine( name : String ) =
+        {
+            macroMap += (name -> state)
+            
+            state
+        }
     }
     
-    def check_function_exists( functionName : String, macroName : String )
-    {
-        macroMap += (macroName -> testForSymbolDeclaration( log, compiler, CCTest, functionName, Seq() ))
-    }
-    
-    // TODO: Uses pkgconfig to check if a module exists (can also speciy min/max versions)
-    def check_module( moduleName : String, macroName : String )
-    {
-    }
+    implicit def macroRegistrationHelper( state : Boolean ) = new MacroRegistrationHelper( state )
     
     def transformFile( inputFile : File, outputFile : File, stateCacheFile : File )
     {
@@ -44,15 +38,25 @@ class CMakeConfigHolder( val log : Logger, val compiler : Compiler )
                 {
                     val symbol = l.drop( pattern.length ).trim
                     
-                    val symbolStatus = macroMap.getOrElse(symbol, false)
-                    
-                    if ( symbolStatus )
+                    macroMap.get( symbol ) match
                     {
-                        "#define %s 1".format( symbol )
-                    }
-                    else
-                    {
-                        "/* " + l + " */"
+                        case Some(symbolStatus)    =>
+                        {
+                            if ( symbolStatus )
+                            {
+                                "#define %s 1".format( symbol )
+                            }
+                            else
+                            {
+                                "/* " + l + " */"
+                            }
+                        }
+                        case None                   =>
+                        {
+                            log.warn( "define not found in CMake include file: " + symbol )
+                            
+                            "/* " + l + " */"
+                        }
                     }
                 }
                 else l
@@ -63,6 +67,10 @@ class CMakeConfigHolder( val log : Logger, val compiler : Compiler )
             outputFile
         }.runIfNotCached( stateCacheFile, Seq(inputFile) )
     }
+    
+    def headerExists( fileName : String, compileType : PlatformChecks.CompileType ) = PlatformChecks.testForHeader( log, compiler, compileType, fileName )
+    def functionExists( functionName : String, compileType : PlatformChecks.CompileType ) = PlatformChecks.testForSymbolDeclaration( log, compiler, compileType, functionName, Seq() )
+    def moduleExists( moduleName : String, compileType : PlatformChecks.CompileType ) = true
 }
 
 object TestBuild extends NativeDefaultBuild
@@ -93,7 +101,7 @@ object TestBuild extends NativeDefaultBuild
                 includeDirectories          <++= (projectDirectory) map { pd => Seq(pd) },
                 cxxSourceFiles              <<= (projectDirectory) map { pd => (pd * "*.cpp").get },
                 cxxCompileFlags             += "-D__OPENCV_BUILD=1",
-                nativeLibraries             ++= Seq("pthread", "rt", "z"),
+                nativeLibraries             ++= Seq("pthread", "rt", "z", "png"),
                 testEnvironmentVariables    ++= Seq(
                     "OPENCV_TEST_DATA_PATH" -> "/home/alex.wilson/Devel/AW/opencv_extra/testdata" )
             ) )
@@ -108,32 +116,64 @@ object TestBuild extends NativeDefaultBuild
 3rdparty/libwebp
 3rdparty/openexr
 */
+
     lazy val openCVConfig = NativeProject( "opencvconfig", file("."),
         Seq(
             exportedIncludeDirectories  <++= (streams, compiler, projectDirectory, projectBuildDirectory) map
             { (s, c, pd, pbd) =>
             
-                val ch = new CMakeConfigHolder( s.log, c )
-
-                ch.check_include_file("alloca.h", "HAVE_ALLOCA_H")
-                ch.check_function_exists("alloca", "HAVE_ALLOCA")
-                ch.check_include_file("linux/videodev.h", "HAVE_CAMV4L")
-                ch.check_include_file("linux/videodev2.h", "HAVE_CAMV4L2")
-                
-                ch.check_module("libdc1394-2", "HAVE_DC1394_2")
-                ch.check_module("libdc1394", "HAVE_DC1394")
-                
-                ch.check_include_file("unistd.h", "HAVE_UNISTD_H")
-                
-                ch.check_include_file("libavformat/avformat.h", "HAVE_GENTOO_FFMPEG")
-                
-                ch.check_module("libavcodec", "HAVE_FFMPEG_CODEC")
-                ch.check_module("libavformat", "HAVE_FFMPEG_FORMAT")
-                ch.check_module("libavutil", "HAVE_FFMPEG_UTIL")
-                ch.check_module("libswscale", "HAVE_FFMPEG_SWSCALE")
-                
-                ch.check_include_file("ffmpeg/avformat.h", "HAVE_FFMPEG_FFMPEG")
-                ch.check_include_file("pthread.h", "HAVE_LIBPTHREAD")
+                val ch = new CMakePlatformConfig( s.log, c )
+                {
+                    import PlatformChecks._
+                    
+                    val HAVE_PNG_H          = headerExists("png.h", CCTest)
+                        .registerDefine("HAVE_PNG_H")
+                        
+                    val HAVE_PNG            = HAVE_PNG_H
+                        .registerDefine("HAVE_PNG")
+                        
+                    val HAVE_ALLOCA_H       = headerExists("alloca.h", CCTest)
+                        .registerDefine("HAVE_ALLOCA_H")
+                        
+                    val HAVE_ALLOCA         = functionExists("alloc", CCTest)
+                        .registerDefine("HAVE_ALLOCA")
+                        
+                    val HAVE_CAMV4L         = headerExists("linux/videodev.h", CCTest)
+                        .registerDefine("HAVE_CAMV4L")
+                            
+                    val HAVE_CAMV4L2        = headerExists("linux/videodev2.h", CCTest)
+                        .registerDefine("HAVE_CAMV4L2")
+                    
+                    val HAVE_DC1394_2       = moduleExists("libdc1394-2", CCTest)
+                        .registerDefine("HAVE_DC1394_2")
+                        
+                    val HAVE_DC1394         = moduleExists("libdc1394", CCTest)
+                        .registerDefine("HAVE_DC1394")
+                    
+                    val HAVE_UNISTD_H       = headerExists("unistd.h", CCTest)
+                        .registerDefine("HAVE_UNISTD_H")
+                    
+                    val HAVE_GENTOO_FFMPEG  = headerExists("libavformat/avformat.h", CCTest)
+                        .registerDefine("HAVE_GENTOO_FFMPEG")
+                    
+                    val HAVE_FFMPEG_CODEC   = moduleExists("libavcodec", CCTest)
+                        .registerDefine("HAVE_FFMPEG_CODEC")
+                    
+                    val HAVE_FFMPEG_FORMAT  = moduleExists("libavformat", CCTest)
+                        .registerDefine("HAVE_FFMPEG_FORMAT")
+                    
+                    val HAVE_FFMPEG_UTIL    = moduleExists("libavutil", CCTest)
+                        .registerDefine("HAVE_FFMPEG_UTIL")
+                    
+                    val HAVE_FFMPEG_SWSCALE = moduleExists("libswscale", CCTest)
+                        .registerDefine("HAVE_FFMPEG_SWSCALE")
+                    
+                    val HAVE_FFMPEG_FFMPEG  = headerExists("ffmpeg/avformat.h", CCTest)
+                        .registerDefine("HAVE_FFMPEG_FFMPEG")
+                        
+                    val HAVE_LIBPTHREAD     = headerExists("pthread.h", CCTest)
+                        .registerDefine("HAVE_LIBPTHREAD")
+                }
                 
                 
                 val autoHeaderRoot = pbd / "autoHeader"
@@ -151,18 +191,37 @@ object TestBuild extends NativeDefaultBuild
             includeDirectories  <++= (streams, compiler, projectDirectory, projectBuildDirectory) map
             { (s, c, pd, pbd) =>
             
-                val ch = new CMakeConfigHolder( s.log, c )
-
-                ch.check_include_file("assert.h", "HAVE_ASSERT_H")
-                ch.check_include_file("fcntl.h", "HAVE_FCNTL_H")
-                ch.check_include_file("io.h", "HAVE_IO_H")
-                ch.check_include_file("search.h", "HAVE_SEARCH_H")
-                ch.check_include_file("string.h", "HAVE_STRING_H")
-                ch.check_include_file("sys/types.h", "HAVE_SYS_TYPES_H")
-                ch.check_include_file("unistd.h", "HAVE_UNISTD_H")
-                ch.check_function_exists("jbg_newlen", "HAVE_JBG_NEWLEN")
-                ch.check_function_exists("mmap", "HAVE_MMAP")
-                
+                val ch = new CMakePlatformConfig( s.log, c )
+                {
+                    import PlatformChecks._
+                    
+                    val HAVE_ASSERT_H       = headerExists("assert.h", CCTest)
+                        .registerDefine("HAVE_ASSERT_H")
+                        
+                    val HAVE_FCNTL_H        = headerExists("fcntl.h", CCTest)
+                        .registerDefine("HAVE_FCNTL_H")
+                        
+                    val HAVE_IO_H           = headerExists("io.h", CCTest)
+                        .registerDefine("HAVE_IO_H")
+                        
+                    val HAVE_SEARCH_H       = headerExists("search.h", CCTest)
+                        .registerDefine("HAVE_SEARCH_H")
+                        
+                    val HAVE_STRING_H       = headerExists("string.h", CCTest)
+                        .registerDefine("HAVE_STRING_H")
+                        
+                    val HAVE_SYS_TYPES_H    = headerExists("sys/types.h", CCTest)
+                        .registerDefine("HAVE_SYS_TYPES_H")
+                        
+                    val HAVE_UNISTD_H       = headerExists("unistd.h", CCTest)
+                        .registerDefine("HAVE_UNISTD_H")
+                        
+                    val HAVE_JBG_NEWLEN     = headerExists("jbg_newlen", CCTest)
+                        .registerDefine("HAVE_JBG_NEWLEN")
+                        
+                    val HAVE_MMAP           = headerExists("mmap", CCTest)
+                        .registerDefine("HAVE_MMAP")
+                }
                 
                 val autoHeaderRoot = pbd / "autoHeader"
                 

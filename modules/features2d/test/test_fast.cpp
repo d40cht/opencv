@@ -42,6 +42,8 @@
 
 #include "test_precomp.hpp"
 
+#include <iostream>
+
 using namespace std;
 using namespace cv;
 
@@ -60,6 +62,9 @@ CV_FastTest::~CV_FastTest() {}
 void CV_FastTest::run( int )
 {
   for(int type=0; type <= 2; ++type) {
+  
+    std::cout << string(ts->get_data_path()) << "inpaint/orig.png" << std::endl;
+  
     Mat image1 = imread(string(ts->get_data_path()) + "inpaint/orig.png");
     Mat image2 = imread(string(ts->get_data_path()) + "cameracalibration/chess9.png");
     string xml = string(ts->get_data_path()) + format("fast/result%d.xml", type);
